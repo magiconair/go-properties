@@ -60,6 +60,7 @@ type stateFn func(*lexer) stateFn
 
 // lexer holds the state of the scanner.
 type lexer struct {
+	keepWS bool       // retain EOLs/whitespace as part of comments
 	input   string    // the string being scanned
 	state   stateFn   // the next lexing function to enter
 	pos     int       // current position in the input
@@ -163,13 +164,11 @@ func (l *lexer) nextItem() item {
 
 // lex creates a new scanner for the input string.
 func lex(input string) *lexer {
-	l := &lexer{
+	return &lexer{
 		input: input,
 		items: make(chan item),
 		runes: make([]rune, 0, 32),
 	}
-	go l.run()
-	return l
 }
 
 // run runs the state machine for the lexer.
@@ -188,12 +187,28 @@ func lexBeforeKey(l *lexer) stateFn {
 		l.emit(itemEOF)
 		return nil
 
+	case isEOL(r) && l.keepWS:
+		// treat as part of the next key's comments block
+		// add the EOL rune r as the comment's prefix
+		l.appendRune(r)
+		l.backup()
+		return lexComment
+
 	case isEOL(r):
 		l.ignore()
 		return lexBeforeKey
 
 	case isComment(r):
+		// treat as part of the next key's comments block
+		// use existing prefix r as the comment's prefix
+		l.appendRune(r)
 		return lexComment
+
+	case isWhitespace(r) && l.keepWS:
+		// treat as part of the next key's comments block
+		// add the whitespace rune r as part of the comment's prefix
+		l.appendRune(r)
+		return lexBeforeKey
 
 	case isWhitespace(r):
 		l.ignore()
@@ -207,12 +222,16 @@ func lexBeforeKey(l *lexer) stateFn {
 
 // lexComment scans a comment line. The comment character has already been scanned.
 func lexComment(l *lexer) stateFn {
-	l.acceptRun(whitespace)
-	l.ignore()
+	if ! l.keepWS {
+		l.acceptRun(whitespace)
+		l.ignore()
+	}
 	for {
 		switch r := l.next(); {
 		case isEOF(r):
-			l.ignore()
+			if ! l.keepWS {
+				l.ignore()
+			}
 			l.emit(itemEOF)
 			return nil
 		case isEOL(r):

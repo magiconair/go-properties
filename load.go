@@ -45,6 +45,11 @@ type Loader struct {
 	// 404 are reported as errors. When set to true, missing files and 404
 	// status codes are not reported as errors.
 	IgnoreMissing bool
+
+	// PreserveFormatting causes the loader to scan whitespace as part of the
+	// comments for the next key. These can then be written out by passing
+	// a similar preserveFormatting argument to WriteCommentWithFormatting.
+	PreserveFormatting bool
 }
 
 // Load reads a buffer into a Properties struct.
@@ -146,7 +151,7 @@ func (l *Loader) LoadURL(url string) (*Properties, error) {
 }
 
 func (l *Loader) loadBytes(buf []byte, enc Encoding) (*Properties, error) {
-	p, err := parse(convert(buf, enc))
+	p, err := parse(convert(buf, enc), l.PreserveFormatting)
 	if err != nil {
 		return nil, err
 	}
